@@ -1,6 +1,21 @@
-import React, { useState } from 'react';
-import { X, Eye, EyeOff, Navigation, Sparkles } from 'lucide-react';
-import { AuthModalMode, User, UserRole } from '../types/ride';
+import React, { useEffect, useState } from 'react';
+import {
+  X,
+  ArrowRight,
+  Eye,
+  EyeOff,
+  Loader2,
+  UserCheck,
+  UserPlus,
+} from 'lucide-react';
+import { AuthModalMode, User } from '../types/ride';
+import {
+  loginUser,
+  registerDeviceId,
+  saveUserSession,
+  signupUser,
+  storeAuthTokens,
+} from '../services/authService';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -10,6 +25,14 @@ interface AuthModalProps {
   onAuthSuccess: (user: User) => void;
 }
 
+const COUNTRY_CODES = [
+  { code: '+91', flag: '🇮🇳', label: 'India (+91)' },
+  { code: '+1', flag: '🇺🇸', label: 'USA (+1)' },
+  { code: '+44', flag: '🇬🇧', label: 'UK (+44)' },
+  { code: '+971', flag: '🇦🇪', label: 'UAE (+971)' },
+  { code: '+65', flag: '🇸🇬', label: 'Singapore (+65)' },
+];
+
 export const AuthModal: React.FC<AuthModalProps> = ({
   isOpen,
   mode,
@@ -17,69 +40,138 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onClose,
   onAuthSuccess,
 }) => {
-  const [name, setName] = useState('');
+  // Sign In fields
+  const [username, setUsername] = useState('');
+
+  // Sign Up fields
+  const [firstname, setFirstname] = useState('');
+  const [lastname, setLastname] = useState('');
   const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+
+  // Shared fields
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState<UserRole>('both');
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [countryCode, setCountryCode] = useState('+91');
+  const [phone, setPhone] = useState('');
+
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!isOpen) {
+      setIsSubmitting(false);
+      setError('');
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
-  const resetError = () => setError('');
+  const selectedCountry =
+    COUNTRY_CODES.find((c) => c.code === countryCode) ?? COUNTRY_CODES[0];
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleModeSwitch = (nextMode: AuthModalMode) => {
+    setError('');
+    onModeChange(nextMode);
+  };
+
+  const handlePhoneChange = (value: string) => {
+    const digitsOnly = value.replace(/\D/g, '').slice(0, 12);
+    setPhone(digitsOnly);
+    if (error) setError('');
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
-    if (mode === 'signup') {
-      if (!name.trim() || !email.trim() || !phone.trim() || password.length < 6) {
-        setError('Please fill all fields and use a password of at least 6 characters.');
+    if (mode === 'signin') {
+      if (!username.trim()) {
+        setError('Please enter your username or email.');
         return;
       }
-      const newUser: User = {
-        id: `user-${Date.now()}`,
-        name: name.trim(),
-        email: email.trim(),
-        phone: phone.trim(),
-        role,
+      if (!password) {
+        setError('Please enter your password.');
+        return;
+      }
+      if (phone.length < 8) {
+        setError('Please enter a valid phone number.');
+        return;
+      }
+    } else {
+      if (!firstname.trim() || !lastname.trim()) {
+        setError('Please enter your first name and last name.');
+        return;
+      }
+      if (!email.trim() || !email.includes('@')) {
+        setError('Please enter a valid email address.');
+        return;
+      }
+      if (phone.length < 8) {
+        setError('Please enter a valid phone number.');
+        return;
+      }
+      if (password.length < 6) {
+        setError('Password must be at least 6 characters.');
+        return;
+      }
+      if (password !== confirmPassword) {
+        setError('Passwords do not match.');
+        return;
+      }
+    }
+
+    const deviceId = `${countryCode}${phone}`;
+    setIsSubmitting(true);
+
+    try {
+      // 1. First register deviceId (phone number) and proceed only if it returns 200
+      await registerDeviceId(deviceId);
+
+      // 2. Call /api/auth/login or /api/auth/signup
+      const authData =
+        mode === 'signin'
+          ? await loginUser({
+              username: username.trim(),
+              password,
+              deviceId,
+            })
+          : await signupUser({
+              firstname: firstname.trim(),
+              lastname: lastname.trim(),
+              email: email.trim(),
+              password,
+              deviceId,
+            });
+
+      // 3. Store tokens in cookies
+      storeAuthTokens(authData.accessToken, authData.refreshToken);
+
+      // 4. Store remaining user data (including userId) in sessionStorage
+      const fullName = `${authData.firstname} ${authData.lastname}`.trim();
+      const authenticatedUser: User = {
+        id: authData.userId,
+        userId: authData.userId,
+        firstname: authData.firstname,
+        lastname: authData.lastname,
+        name: fullName || (mode === 'signin' ? username.trim() : firstname.trim()),
+        email: mode === 'signin' ? username.trim() : email.trim(),
+        phone: `${countryCode} ${phone}`,
+        deviceId,
+        role: 'both',
       };
-      onAuthSuccess(newUser);
+
+      saveUserSession(authenticatedUser);
+      onAuthSuccess(authenticatedUser);
       onClose();
-      return;
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Authentication failed. Please try again.';
+      setError(message);
+    } finally {
+      setIsSubmitting(false);
     }
-
-    // Sign in validation
-    if (!email.trim() || password.length < 4) {
-      setError('Enter your email/phone and password (min 4 chars).');
-      return;
-    }
-
-    const derivedName = email.includes('@')
-      ? email.split('@')[0].replace(/[._]/g, ' ')
-      : 'Race Traveler';
-
-    const signedInUser: User = {
-      id: `user-${Date.now()}`,
-      name: derivedName.charAt(0).toUpperCase() + derivedName.slice(1),
-      email: email.trim(),
-      phone: phone.trim() || '+91 98765 43210',
-      role: 'both',
-    };
-    onAuthSuccess(signedInUser);
-    onClose();
-  };
-
-  const handleDemoSignIn = () => {
-    onAuthSuccess({
-      id: 'user-demo',
-      name: 'Chandu',
-      email: 'chandu@raceapp.com',
-      phone: '+91 98765 43210',
-      role: 'both',
-    });
-    onClose();
   };
 
   return (
@@ -89,184 +181,260 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       aria-modal="true"
       aria-labelledby="auth-modal-title"
     >
-      <div className="relative w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
-          <div className="flex items-center gap-2">
-            <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-race-500 text-white">
-              <Navigation className="h-4 w-4 fill-current rotate-45" />
-            </span>
-            <div>
-              <h2 id="auth-modal-title" className="text-lg font-bold text-slate-900">
-                {mode === 'signin' ? 'Welcome back to Race' : 'Create your Race account'}
-              </h2>
-              <p className="text-xs text-slate-500">
-                {mode === 'signin'
-                  ? 'Sign in to book or host rides instantly'
-                  : 'Join thousands of daily commuters & hosts'}
-              </p>
-            </div>
-          </div>
+      <div className="relative max-h-[92vh] w-full max-w-[440px] overflow-y-auto rounded-3xl bg-white shadow-2xl">
+        {/* Top Header */}
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white px-6 py-4">
+          <h2 id="auth-modal-title" className="text-xl font-bold text-slate-900">
+            {mode === 'signin' ? 'Welcome Back' : 'Create Account'}
+          </h2>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            disabled={isSubmitting}
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-700 transition disabled:opacity-50"
             aria-label="Close modal"
           >
-            <X className="h-5 w-5" />
+            <X className="h-4 w-4" />
           </button>
         </div>
 
-        {/* Sign In / Sign Up Tabs */}
-        <div className="px-6 pt-4">
-          <div className="grid grid-cols-2 rounded-xl bg-slate-100 p-1">
-            <button
-              type="button"
-              onClick={() => {
-                resetError();
-                onModeChange('signin');
-              }}
-              className={`rounded-lg py-2 text-sm font-semibold transition ${
-                mode === 'signin'
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              Sign In
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                resetError();
-                onModeChange('signup');
-              }}
-              className={`rounded-lg py-2 text-sm font-semibold transition ${
-                mode === 'signup'
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              Sign Up
-            </button>
+        <div className="px-6 py-5">
+          {/* Center Icon Badge */}
+          <div className="flex flex-col items-center text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-50 via-sky-50 to-emerald-50 shadow-sm">
+              {mode === 'signin' ? (
+                <UserCheck className="h-6 w-6 text-blue-600" />
+              ) : (
+                <UserPlus className="h-6 w-6 text-blue-600" />
+              )}
+            </div>
+            <p className="mt-3 text-sm font-medium text-slate-600">
+              {mode === 'signin'
+                ? 'Sign in with your account & phone number'
+                : 'Fill in your details to join Race'}
+            </p>
           </div>
-        </div>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="space-y-3.5 px-6 py-5">
           {error && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
+            <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3.5 py-2.5 text-xs font-medium text-red-700">
               {error}
             </div>
           )}
 
-          {mode === 'signup' && (
+          <form onSubmit={handleSubmit} className="mt-5 space-y-3.5">
+            {mode === 'signin' ? (
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-slate-700">
+                  Username or Email
+                </label>
+                <input
+                  type="text"
+                  value={username}
+                  onChange={(e) => {
+                    setUsername(e.target.value);
+                    if (error) setError('');
+                  }}
+                  placeholder="john.doe@example.com"
+                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15"
+                />
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-slate-700">
+                      First Name
+                    </label>
+                    <input
+                      type="text"
+                      value={firstname}
+                      onChange={(e) => {
+                        setFirstname(e.target.value);
+                        if (error) setError('');
+                      }}
+                      placeholder="John"
+                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-slate-700">
+                      Last Name
+                    </label>
+                    <input
+                      type="text"
+                      value={lastname}
+                      onChange={(e) => {
+                        setLastname(e.target.value);
+                        if (error) setError('');
+                      }}
+                      placeholder="Doe"
+                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-slate-700">
+                    Email
+                  </label>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      if (error) setError('');
+                    }}
+                    placeholder="john.doe@example.com"
+                    className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15"
+                  />
+                </div>
+              </>
+            )}
+
+            {/* Country Code + Phone Number (used as deviceId) */}
             <div>
               <label className="mb-1 block text-xs font-semibold text-slate-700">
-                Full Name
+                Phone Number
               </label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Chandu Pichewar"
-                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm outline-none focus:border-race-500 focus:ring-2 focus:ring-race-500/20"
-              />
-            </div>
-          )}
-
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-slate-700">
-              {mode === 'signin' ? 'Email or Mobile Number' : 'Email Address'}
-            </label>
-            <input
-              type="text"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm outline-none focus:border-race-500 focus:ring-2 focus:ring-race-500/20"
-            />
-          </div>
-
-          {mode === 'signup' && (
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-slate-700">
-                Mobile Number
-              </label>
-              <input
-                type="tel"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="+91 98765 43210"
-                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm outline-none focus:border-race-500 focus:ring-2 focus:ring-race-500/20"
-              />
-            </div>
-          )}
-
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-slate-700">
-              Password
-            </label>
-            <div className="relative">
-              <input
-                type={showPassword ? 'text' : 'password'}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 pr-10 text-sm outline-none focus:border-race-500 focus:ring-2 focus:ring-race-500/20"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword((v) => !v)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                aria-label="Toggle password visibility"
-              >
-                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </button>
-            </div>
-          </div>
-
-          {mode === 'signup' && (
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-slate-700">
-                I want to use Race as
-              </label>
-              <div className="grid grid-cols-3 gap-2">
-                {(['guest', 'host', 'both'] as UserRole[]).map((r) => (
-                  <button
-                    key={r}
-                    type="button"
-                    onClick={() => setRole(r)}
-                    className={`rounded-lg border px-2 py-2 text-xs font-semibold capitalize transition ${
-                      role === r
-                        ? 'border-race-500 bg-race-50 text-race-700'
-                        : 'border-slate-200 text-slate-600 hover:bg-slate-50'
-                    }`}
+              <div className="flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2.5 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/15">
+                <div className="relative flex items-center pr-2.5 border-r border-slate-200">
+                  <select
+                    aria-label="Country code"
+                    value={countryCode}
+                    onChange={(e) => setCountryCode(e.target.value)}
+                    className="appearance-none bg-transparent pr-1 text-sm font-semibold text-slate-800 outline-none cursor-pointer"
                   >
-                    {r === 'both' ? 'Guest & Host' : r}
-                  </button>
-                ))}
+                    {COUNTRY_CODES.map((c) => (
+                      <option key={c.code} value={c.code}>
+                        {c.code} {c.flag}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="sr-only">{selectedCountry.label}</span>
+                </div>
+                <input
+                  type="tel"
+                  inputMode="numeric"
+                  value={phone}
+                  onChange={(e) => handlePhoneChange(e.target.value)}
+                  placeholder="Enter your phone number"
+                  className="w-full bg-transparent pl-3 text-sm text-slate-900 placeholder:text-slate-400 outline-none"
+                />
               </div>
             </div>
-          )}
 
-          <button
-            type="submit"
-            className="w-full rounded-xl bg-race-500 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-race-600 transition"
-          >
-            {mode === 'signin' ? 'Sign In' : 'Create Account'}
-          </button>
+            {/* Password */}
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-slate-700">
+                {mode === 'signin' ? 'Password' : 'Create Password'}
+              </label>
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    if (error) setError('');
+                  }}
+                  placeholder="••••••••"
+                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 pr-10 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  aria-label="Toggle password visibility"
+                >
+                  {showPassword ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
+            </div>
 
-          {mode === 'signin' && (
+            {/* Confirm Password (Sign Up only) */}
+            {mode === 'signup' && (
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-slate-700">
+                  Confirm Password
+                </label>
+                <div className="relative">
+                  <input
+                    type={showConfirmPassword ? 'text' : 'password'}
+                    value={confirmPassword}
+                    onChange={(e) => {
+                      setConfirmPassword(e.target.value);
+                      if (error) setError('');
+                    }}
+                    placeholder="••••••••"
+                    className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 pr-10 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword((v) => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    aria-label="Toggle confirm password visibility"
+                  >
+                    {showConfirmPassword ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+
             <button
-              type="button"
-              onClick={handleDemoSignIn}
-              className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-race-200 bg-race-50 py-2 text-xs font-semibold text-race-700 hover:bg-race-100 transition"
+              type="submit"
+              disabled={isSubmitting}
+              className="mt-1 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-emerald-500 py-3 text-sm font-semibold text-white shadow-md hover:from-blue-700 hover:to-emerald-600 disabled:cursor-not-allowed disabled:opacity-60 transition"
             >
-              <Sparkles className="h-3.5 w-3.5" />
-              <span>Quick Demo Sign In (Chandu)</span>
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>{mode === 'signin' ? 'Signing In...' : 'Creating Account...'}</span>
+                </>
+              ) : (
+                <>
+                  <span>{mode === 'signin' ? 'Sign In' : 'Create Account'}</span>
+                  <ArrowRight className="h-4 w-4" />
+                </>
+              )}
             </button>
-          )}
-        </form>
+          </form>
+
+          {/* Footer Mode Switch */}
+          <p className="mt-5 text-center text-sm text-slate-600">
+            {mode === 'signin' ? (
+              <>
+                Don&apos;t have an account?{' '}
+                <button
+                  type="button"
+                  disabled={isSubmitting}
+                  onClick={() => handleModeSwitch('signup')}
+                  className="font-semibold text-blue-600 hover:underline disabled:opacity-50"
+                >
+                  Sign Up
+                </button>
+              </>
+            ) : (
+              <>
+                Already have an account?{' '}
+                <button
+                  type="button"
+                  disabled={isSubmitting}
+                  onClick={() => handleModeSwitch('signin')}
+                  className="font-semibold text-blue-600 hover:underline disabled:opacity-50"
+                >
+                  Sign In
+                </button>
+              </>
+            )}
+          </p>
+        </div>
       </div>
     </div>
   );

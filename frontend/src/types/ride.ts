@@ -2,9 +2,13 @@ export type UserRole = 'guest' | 'host' | 'both';
 
 export interface User {
   id: string;
+  userId?: string;
+  firstname?: string;
+  lastname?: string;
   name: string;
   email: string;
   phone: string;
+  deviceId?: string;
   role: UserRole;
 }
 

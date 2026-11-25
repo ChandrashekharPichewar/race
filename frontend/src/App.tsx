@@ -7,20 +7,25 @@ import { FeaturesAndFooter } from './components/FeaturesAndFooter';
 import { AuthModal } from './components/AuthModal';
 import { HostRideModal } from './components/HostRideModal';
 import { ManageRideModal } from './components/ManageRideModal';
+import { ReportIssuePage } from './components/ReportIssuePage';
+import { SupportTicketsPage } from './components/SupportTicketsPage';
 import { INITIAL_RIDES } from './data/mockRides';
+import {
+  clearAuthTokens,
+  clearUserSession,
+  getUserSession,
+  hasAuthToken,
+  saveUserSession,
+} from './services/authService';
 import { AuthModalMode, Booking, Ride, User } from './types/ride';
 
 const STORAGE_KEYS = {
-  user: 'race_user',
   rides: 'race_rides',
   bookings: 'race_bookings',
 };
 
 export function App() {
-  const [user, setUser] = useState<User | null>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.user);
-    return saved ? (JSON.parse(saved) as User) : null;
-  });
+  const [user, setUser] = useState<User | null>(() => getUserSession());
 
   const [rides, setRides] = useState<Ride[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.rides);
@@ -36,13 +41,59 @@ export function App() {
   const [authMode, setAuthMode] = useState<AuthModalMode>('signin');
   const [hostModalOpen, setHostModalOpen] = useState(false);
   const [manageModalOpen, setManageModalOpen] = useState(false);
+  const [currentPage, setCurrentPage] = useState<'home' | 'report-issue' | 'support-tickets'>('home');
+  const [pendingRoute, setPendingRoute] = useState<'report-issue' | 'support-tickets' | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+
+  const isReportIssuePath = (pathname: string) => {
+    const normalized = pathname.toLowerCase();
+    return normalized === '/reportanissue' || normalized === '/report-an-issue';
+  };
+
+  const isSupportTicketsPath = (pathname: string) => {
+    const normalized = pathname.toLowerCase();
+    return normalized === '/my-support-tickets' || normalized === '/support-tickets';
+  };
+
+  useEffect(() => {
+    const syncRouteFromLocation = () => {
+      if (isReportIssuePath(window.location.pathname)) {
+        if (hasAuthToken()) {
+          setCurrentPage('report-issue');
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        } else {
+          window.history.replaceState(null, '', '/');
+          setCurrentPage('home');
+          setPendingRoute('report-issue');
+          setAuthMode('signin');
+          setAuthModalOpen(true);
+        }
+      } else if (isSupportTicketsPath(window.location.pathname)) {
+        if (hasAuthToken()) {
+          setCurrentPage('support-tickets');
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        } else {
+          window.history.replaceState(null, '', '/');
+          setCurrentPage('home');
+          setPendingRoute('support-tickets');
+          setAuthMode('signin');
+          setAuthModalOpen(true);
+        }
+      } else {
+        setCurrentPage('home');
+      }
+    };
+
+    syncRouteFromLocation();
+    window.addEventListener('popstate', syncRouteFromLocation);
+    return () => window.removeEventListener('popstate', syncRouteFromLocation);
+  }, []);
 
   useEffect(() => {
     if (user) {
-      localStorage.setItem(STORAGE_KEYS.user, JSON.stringify(user));
+      saveUserSession(user);
     } else {
-      localStorage.removeItem(STORAGE_KEYS.user);
+      clearUserSession();
     }
   }, [user]);
 
@@ -62,6 +113,19 @@ export function App() {
   };
 
   const scrollToSection = (sectionId: string) => {
+    if (currentPage !== 'home') {
+      setCurrentPage('home');
+      window.history.pushState(null, '', '/');
+      window.setTimeout(() => {
+        if (sectionId === 'top') {
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          return;
+        }
+        document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth' });
+      }, 50);
+      return;
+    }
+
     if (sectionId === 'top') {
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
@@ -72,6 +136,36 @@ export function App() {
     }
   };
 
+  const navigateProtectedRoute = (
+    route: 'report-issue' | 'support-tickets',
+    path: string,
+    promptMsg: string
+  ) => {
+    if (!hasAuthToken()) {
+      setPendingRoute(route);
+      handleOpenAuth('signin');
+      showToast(promptMsg);
+      return;
+    }
+    setCurrentPage(route);
+    window.history.pushState(null, '', path);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleOpenReportIssue = () =>
+    navigateProtectedRoute(
+      'report-issue',
+      '/reportanIssue',
+      'Please sign in to access Report an Issue.'
+    );
+
+  const handleOpenSupportTickets = () =>
+    navigateProtectedRoute(
+      'support-tickets',
+      '/my-support-tickets',
+      'Please sign in to view your support tickets.'
+    );
+
   const handleOpenAuth = (mode: AuthModalMode) => {
     setAuthMode(mode);
     setAuthModalOpen(true);
@@ -79,11 +173,31 @@ export function App() {
 
   const handleAuthSuccess = (loggedInUser: User) => {
     setUser(loggedInUser);
+    if (pendingRoute && hasAuthToken()) {
+      const target = pendingRoute;
+      setPendingRoute(null);
+      setCurrentPage(target);
+      window.history.pushState(
+        null,
+        '',
+        target === 'report-issue' ? '/reportanIssue' : '/my-support-tickets'
+      );
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else {
+      scrollToSection('top');
+    }
     showToast(`Welcome to Race, ${loggedInUser.name}!`);
   };
 
   const handleSignOut = () => {
+    clearAuthTokens();
+    clearUserSession();
     setUser(null);
+    setPendingRoute(null);
+    if (currentPage !== 'home') {
+      setCurrentPage('home');
+      window.history.pushState(null, '', '/');
+    }
     showToast('Signed out successfully.');
   };
 
@@ -166,23 +280,44 @@ export function App() {
       />
 
       <main>
-        <HeroCarousel
-          onBookClick={() => scrollToSection('book-ride')}
-          onHostClick={() => setHostModalOpen(true)}
-        />
+        {currentPage === 'report-issue' && hasAuthToken() ? (
+          <ReportIssuePage
+            user={user}
+            onBackHome={() => scrollToSection('top')}
+            onViewTickets={handleOpenSupportTickets}
+            onSubmitted={(ticketCode) =>
+              showToast(`Issue submitted! Ticket ID: ${ticketCode}`)
+            }
+          />
+        ) : currentPage === 'support-tickets' && hasAuthToken() ? (
+          <SupportTicketsPage
+            onBackHome={() => scrollToSection('top')}
+            onReportNewIssue={handleOpenReportIssue}
+          />
+        ) : (
+          <>
+            <HeroCarousel
+              onBookClick={() => scrollToSection('book-ride')}
+              onHostClick={() => setHostModalOpen(true)}
+            />
 
-        <BookRideSection
-          rides={rides}
-          user={user}
-          onRequireAuth={() => handleOpenAuth('signin')}
-          onConfirmBooking={handleConfirmBooking}
-          onOpenHostModal={() => setHostModalOpen(true)}
-        />
+            <BookRideSection
+              rides={rides}
+              user={user}
+              onRequireAuth={() => handleOpenAuth('signin')}
+              onConfirmBooking={handleConfirmBooking}
+              onOpenHostModal={() => setHostModalOpen(true)}
+            />
 
-        <FeaturesAndFooter
-          onSelectRoute={() => scrollToSection('book-ride')}
-          onOpenHostModal={() => setHostModalOpen(true)}
-        />
+            <FeaturesAndFooter
+              onSelectRoute={() => scrollToSection('book-ride')}
+              onOpenHostModal={() => setHostModalOpen(true)}
+              onOpenReportIssue={handleOpenReportIssue}
+              onOpenSupportTickets={handleOpenSupportTickets}
+              onScrollToSection={scrollToSection}
+            />
+          </>
+        )}
       </main>
 
       {/* Sign In / Sign Up Modal */}
