@@ -1,0 +1,62 @@
+{
+  "searchFilters": [
+    {
+      "label": "Origin Gachibowli",
+      "from": "Gachibowli",
+      "to": "",
+      "expectedCount": 1
+    },
+    {
+      "label": "Destination Bengaluru",
+      "from": "",
+      "to": "Bengaluru",
+      "expectedCount": 1
+    },
+    {
+      "label": "Origin Vijayawada to Guntur",
+      "from": "Vijayawada",
+      "to": "Guntur",
+      "expectedCount": 1
+    },
+    {
+      "label": "No matching route",
+      "from": "Atlantis",
+      "to": "Mars",
+      "expectedCount": 0
+    }
+  ],
+  "quickRoutes": [
+    {
+      "chipText": "Gachibowli → HITEC City",
+      "expectedFrom": "Gachibowli",
+      "expectedTo": "HITEC City",
+      "expectedCount": 1
+    },
+    {
+      "chipText": "Hyderabad → Bengaluru",
+      "expectedFrom": "Hyderabad",
+      "expectedTo": "Bengaluru",
+      "expectedCount": 1
+    },
+    {
+      "chipText": "Miyapur → Financial District",
+      "expectedFrom": "Miyapur",
+      "expectedTo": "Financial District",
+      "expectedCount": 1
+    }
+  ],
+  "hostRidePayloads": [
+    {
+      "from": "Kondapur",
+      "to": "Airport",
+      "vehicle": "Toyota Innova",
+      "pricePerSeat": 250
+    },
+    {
+      "from": "Banjara Hills",
+      "to": "HITEC City",
+      "vehicle": "Honda City",
+      "pricePerSeat": 90
+    }
+  ]
+}

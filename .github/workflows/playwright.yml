@@ -1,0 +1,123 @@
+name: Playwright E2E CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      test_tag:
+        description: 'Optional Playwright tag filter (e.g. @smoke, @regression, @auth, @private)'
+        required: false
+        default: ''
+  schedule:
+    # Runs nightly at 02:00 UTC (07:30 IST)
+    - cron: '0 2 * * *'
+
+concurrency:
+  group: playwright-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  playwright-tests:
+    name: Playwright Tests (Shard ${{ matrix.shardIndex }}/3)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shardIndex: [1, 2, 3]
+
+    env:
+      CI: 'true'
+      TEST_ENV: prod
+      BASE_URL: ${{ secrets.BASE_URL || 'https://race-cyan.vercel.app/' }}
+      RUN_LIVE_API: 'false'
+      TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
+      TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
+      TEST_USER_PHONE: ${{ secrets.TEST_USER_PHONE }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: playwright-test/package-lock.json
+
+      - name: Install Playwright dependencies
+        working-directory: playwright-test
+        run: npm ci
+
+      - name: Install Chromium browser
+        working-directory: playwright-test
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright tests (Shard ${{ matrix.shardIndex }}/3)
+        working-directory: playwright-test
+        run: |
+          TAG_ARG=""
+          if [ -n "${{ inputs.test_tag }}" ]; then
+            TAG_ARG="--grep ${{ inputs.test_tag }}"
+          fi
+          npx playwright test --project=chromium --shard=${{ matrix.shardIndex }}/3 $TAG_ARG
+
+      - name: Upload shard blob report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: blob-report-${{ matrix.shardIndex }}
+          path: playwright-test/blob-report/
+          retention-days: 14
+
+      - name: Upload shard test artifacts (screenshots, videos, traces)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-artifacts-shard-${{ matrix.shardIndex }}
+          path: playwright-test/test-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  merge-reports:
+    name: Merge Sharded HTML Report
+    if: always()
+    needs: [playwright-tests]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: playwright-test/package-lock.json
+
+      - name: Install Playwright dependencies
+        working-directory: playwright-test
+        run: npm ci
+
+      - name: Download all blob reports
+        uses: actions/download-artifact@v4
+        with:
+          path: playwright-test/all-blob-reports
+          pattern: blob-report-*
+          merge-multiple: true
+
+      - name: Merge into consolidated HTML report
+        working-directory: playwright-test
+        run: npx playwright merge-reports --reporter html ./all-blob-reports
+
+      - name: Upload consolidated Playwright HTML report
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-html-report
+          path: playwright-test/playwright-report/
+          retention-days: 30

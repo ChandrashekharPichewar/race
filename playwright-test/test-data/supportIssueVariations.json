@@ -1,0 +1,44 @@
+{
+  "reportIssuePayloads": [
+    {
+      "issueType": "Payment / Refund Issue",
+      "urgency": "High — Impacts an upcoming or recent ride",
+      "briefDescription": "Double charge on morning commute",
+      "details": "Charged twice via UPI for ride-101 from Gachibowli to HITEC City."
+    },
+    {
+      "issueType": "Safety Concern",
+      "urgency": "Critical — Urgent safety or payment issue",
+      "briefDescription": "Rash driving reported on ORR",
+      "details": "Host exceeded speed limit and ignored safety request."
+    },
+    {
+      "issueType": "Lost Item in Vehicle",
+      "urgency": "Medium — Needs attention within 24–48 hours",
+      "briefDescription": "Forgot laptop charger on back seat",
+      "details": "Left black USB-C charger in Hyundai Creta after morning drop-off."
+    }
+  ],
+  "statusFilterCases": [
+    {
+      "tab": "All",
+      "expectedCount": 3
+    },
+    {
+      "tab": "Open",
+      "expectedCount": 1
+    },
+    {
+      "tab": "In Progress",
+      "expectedCount": 1
+    },
+    {
+      "tab": "Resolved",
+      "expectedCount": 1
+    },
+    {
+      "tab": "Closed",
+      "expectedCount": 0
+    }
+  ]
+}

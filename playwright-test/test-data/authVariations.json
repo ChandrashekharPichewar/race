@@ -1,0 +1,115 @@
+{
+  "validSignInCases": [
+    {
+      "label": "India user with email",
+      "username": "john.doe@example.com",
+      "countryCode": "+91",
+      "phone": "9876543210",
+      "password": "Secret@123",
+      "expectedDeviceId": "+919876543210"
+    },
+    {
+      "label": "USA user with username",
+      "username": "johndoe",
+      "countryCode": "+1",
+      "phone": "4155552671",
+      "password": "Secret@123",
+      "expectedDeviceId": "+14155552671"
+    },
+    {
+      "label": "UK user with email",
+      "username": "alice.uk@example.com",
+      "countryCode": "+44",
+      "phone": "7911123456",
+      "password": "Secret@123",
+      "expectedDeviceId": "+447911123456"
+    }
+  ],
+  "invalidSignInCases": [
+    {
+      "label": "Empty username or email",
+      "username": "",
+      "phone": "9876543210",
+      "password": "Secret@123",
+      "expectedError": "Please enter your username or email."
+    },
+    {
+      "label": "Empty password",
+      "username": "john.doe@example.com",
+      "phone": "9876543210",
+      "password": "",
+      "expectedError": "Please enter your password."
+    },
+    {
+      "label": "Short phone number",
+      "username": "john.doe@example.com",
+      "phone": "12345",
+      "password": "Secret@123",
+      "expectedError": "Please enter a valid phone number."
+    }
+  ],
+  "validSignUpCases": [
+    {
+      "label": "Standard India signup",
+      "firstname": "Ramn",
+      "lastname": "Doe",
+      "email": "ramn.doe@example.com",
+      "countryCode": "+91",
+      "phone": "9876543210",
+      "password": "Secret@123",
+      "confirmPassword": "Secret@123"
+    },
+    {
+      "label": "UAE signup",
+      "firstname": "Ayesha",
+      "lastname": "Khan",
+      "email": "ayesha.khan@example.com",
+      "countryCode": "+971",
+      "phone": "501234567",
+      "password": "StrongPass@99",
+      "confirmPassword": "StrongPass@99"
+    }
+  ],
+  "invalidSignUpCases": [
+    {
+      "label": "Missing first or last name",
+      "firstname": "",
+      "lastname": "Doe",
+      "email": "john.doe@example.com",
+      "phone": "9876543210",
+      "password": "Secret@123",
+      "confirmPassword": "Secret@123",
+      "expectedError": "Please enter your first name and last name."
+    },
+    {
+      "label": "Invalid email format",
+      "firstname": "John",
+      "lastname": "Doe",
+      "email": "not-an-email",
+      "phone": "9876543210",
+      "password": "Secret@123",
+      "confirmPassword": "Secret@123",
+      "expectedError": "Please enter a valid email address."
+    },
+    {
+      "label": "Password shorter than 6 characters",
+      "firstname": "John",
+      "lastname": "Doe",
+      "email": "john.doe@example.com",
+      "phone": "9876543210",
+      "password": "123",
+      "confirmPassword": "123",
+      "expectedError": "Password must be at least 6 characters."
+    },
+    {
+      "label": "Mismatched confirm password",
+      "firstname": "John",
+      "lastname": "Doe",
+      "email": "john.doe@example.com",
+      "phone": "9876543210",
+      "password": "Secret@123",
+      "confirmPassword": "Mismatch@123",
+      "expectedError": "Passwords do not match."
+    }
+  ]
+}
